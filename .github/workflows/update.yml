@@ -1,0 +1,44 @@
+name: Update PoE2 prices
+
+on:
+  schedule:
+    - cron: "7 * * * *"   # 每小時第 7 分(避開整點壅塞,較不易被延遲)
+  workflow_dispatch: {}    # 允許手動觸發(第一次執行用)
+
+permissions:
+  contents: write          # 讓 workflow 能把 message_id.txt commit 回 repo
+
+concurrency:
+  group: price-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update Discord message
+        env:
+          # 兩種模式擇一設定 Secrets:
+          #   Bot 模式:DISCORD_BOT_TOKEN + DISCORD_CHANNEL_ID
+          #   Webhook 模式:DISCORD_WEBHOOK_URL
+          # 沒設定的 secret 會是空字串,腳本會自動偵測模式。
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          DISCORD_CHANNEL_ID: ${{ secrets.DISCORD_CHANNEL_ID }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          # ── 設定區:改這裡即可 ──────────────────────────
+          CURRENCIES: "Divine Orb,Chaos Orb"
+          LEAGUE_MATCH: "aldur"
+          # ──────────────────────────────────────────────
+        run: python update_prices.py
+
+      - name: Save message id (first run only)
+        run: |
+          if [[ -n "$(git status --porcelain message_id.txt)" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add message_id.txt
+            git commit -m "chore: save discord message id"
+            git push
+          fi
