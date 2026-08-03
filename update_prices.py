@@ -177,21 +177,22 @@ def trend(change):
 
 
 def build_payload(league, primary_name, rows, missing):
+    league_label = league.get("name") or league.get("id")
+    # poe.ninja page slug: lowercase league name with non-alphanumerics removed
+    source_url = f"https://poe.ninja/poe2/economy/{re.sub(r'[^a-z0-9]', '', str(league_label).lower())}/currency"
+
     lines = [f"**{name}** : `{fmt(v)}` {primary_name}{trend(chg)}" for name, v, chg in rows]
     if missing:
         lines.append(f"-# 查無資料:{', '.join(missing)}")
-    lines.append(f"-# 更新於 <t:{int(time.time())}:R>")
-    league_label = league.get("name") or league.get("id")
-    # poe.ninja page slug: lowercase league name with non-alphanumerics removed
-    slug = re.sub(r"[^a-z0-9]", "", str(league_label).lower())
+    lines.append(f"-# 資料來源:[poe.ninja]({source_url}) • 更新於 <t:{int(time.time())}:R>")
+
     return {
         "content": "",
         "embeds": [{
             "title": f"PoE2 通貨價格 — {league_label}",
-            "url": f"https://poe.ninja/poe2/economy/{slug}/currency",
             "description": "\n".join(lines),
             "color": 0xC9A227,
-            "footer": {"text": "資料來源:poe.ninja · 自動更新"},
+            "footer": {"text": "自動更新"},
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }],
         "allowed_mentions": {"parse": []},
