@@ -20,7 +20,9 @@ Later runs: edits that same message (PATCH), so no notifications spam.
 """
 import json
 import os
+import re
 import sys
+import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -152,30 +154,44 @@ def fetch_prices():
     by_name = {}
     for line in data.get("lines", []) or []:
         v = line.get("primaryValue")
-        by_name[name_of(line.get("id")).lower()] = (v * factor) if v is not None else None
+        change = (line.get("sparkline") or {}).get("totalChange")
+        if v is not None:
+            by_name[name_of(line.get("id")).lower()] = (v * factor, change)
 
     rows, missing = [], []
     for want in CURRENCIES:
-        v = by_name.get(want.lower())
-        if v is None:
+        entry = by_name.get(want.lower())
+        if entry is None:
             missing.append(want)
         else:
-            rows.append((want, v))
+            rows.append((want, entry[0], entry[1]))
     return league, quote_name, rows, missing
 
 
+def trend(change):
+    """7-day change from the API sparkline -> arrow + percent."""
+    if change is None or change == 0:
+        return ""
+    arrow = "🔺" if change > 0 else "🔻"
+    return f"  {arrow} {change:+.1f}%"
+
+
 def build_payload(league, primary_name, rows, missing):
-    lines = [f"**{name}** : `{fmt(v)}` {primary_name}" for name, v in rows]
+    lines = [f"**{name}** : `{fmt(v)}` {primary_name}{trend(chg)}" for name, v, chg in rows]
     if missing:
         lines.append(f"-# 查無資料:{', '.join(missing)}")
+    lines.append(f"-# 更新於 <t:{int(time.time())}:R>")
     league_label = league.get("name") or league.get("id")
+    # poe.ninja page slug: lowercase league name with non-alphanumerics removed
+    slug = re.sub(r"[^a-z0-9]", "", str(league_label).lower())
     return {
         "content": "",
         "embeds": [{
             "title": f"PoE2 通貨價格 — {league_label}",
-            "description": "\n".join(lines) if lines else "(無資料)",
+            "url": f"https://poe.ninja/poe2/economy/{slug}/currency",
+            "description": "\n".join(lines),
             "color": 0xC9A227,
-            "footer": {"text": "資料來源:poe.ninja · 每小時自動更新"},
+            "footer": {"text": "資料來源:poe.ninja · 自動更新"},
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }],
         "allowed_mentions": {"parse": []},
