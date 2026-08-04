@@ -36,13 +36,13 @@ jobs:
           # ──────────────────────────────────────────────
         run: python update_prices.py
 
-      - name: Save message id (first run only)
+      - name: Commit board state (message id & price history)
         run: |
-          if [[ -n "$(git status --porcelain message_id.txt)" ]]; then
+          git add message_id.txt price_history.csv
+          if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add message_id.txt
-            git commit -m "chore: save discord message id"
+            git commit -m "chore: update board state"
             git pull --rebase origin main
             git push
           fi

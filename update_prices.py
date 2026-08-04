@@ -18,6 +18,7 @@ Env vars:
 First run: posts a new message and saves its id to message_id.txt.
 Later runs: edits that same message (PATCH), so no notifications spam.
 """
+import csv
 import json
 import os
 import re
@@ -30,6 +31,12 @@ from datetime import datetime, timezone
 API_BASE = "https://poe.ninja"
 DISCORD_API = "https://discord.com/api/v10"
 STATE_FILE = "message_id.txt"
+HISTORY_FILE = "price_history.csv"
+# 24h trend: compare against our own record aged 20-30h (closest to 24h).
+# If no record in that window, the trend is simply not shown.
+TREND_TARGET_S = 24 * 3600
+TREND_MIN_AGE_S = 20 * 3600
+TREND_MAX_AGE_S = 30 * 3600
 
 BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "").strip()
 CHANNEL_ID = os.environ.get("DISCORD_CHANNEL_ID", "").strip()
@@ -154,25 +161,72 @@ def fetch_prices():
     by_name = {}
     for line in data.get("lines", []) or []:
         v = line.get("primaryValue")
-        change = (line.get("sparkline") or {}).get("totalChange")
         if v is not None:
-            by_name[name_of(line.get("id")).lower()] = (v * factor, change)
+            by_name[name_of(line.get("id")).lower()] = v * factor
 
     rows, missing = [], []
     for want in CURRENCIES:
-        entry = by_name.get(want.lower())
-        if entry is None:
+        v = by_name.get(want.lower())
+        if v is None:
             missing.append(want)
         else:
-            rows.append((want, entry[0], entry[1]))
+            rows.append((want, v))
     return league, quote_name, rows, missing
 
 
+def load_history():
+    """price_history.csv rows: unix_ts, iso_utc, league, currency, value, quote"""
+    rows = []
+    if not os.path.exists(HISTORY_FILE):
+        return rows
+    with open(HISTORY_FILE, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            try:
+                rows.append({
+                    "ts": int(r["unix_ts"]),
+                    "league": r["league"],
+                    "currency": r["currency"],
+                    "value": float(r["value"]),
+                    "quote": r["quote"],
+                })
+            except (KeyError, ValueError):
+                continue  # skip malformed lines
+    return rows
+
+
+def change_24h(history, now_ts, league_label, quote_name, currency, current_value):
+    """Percent change vs our own record closest to 24h ago (20-30h window).
+    Returns None if there is no comparable record -> trend not shown."""
+    best = None
+    for r in history:
+        if (r["league"], r["quote"], r["currency"]) != (league_label, quote_name, currency):
+            continue
+        age = now_ts - r["ts"]
+        if TREND_MIN_AGE_S <= age <= TREND_MAX_AGE_S:
+            dist = abs(age - TREND_TARGET_S)
+            if best is None or dist < best[0]:
+                best = (dist, r["value"])
+    if best is None or best[1] == 0:
+        return None
+    return (current_value - best[1]) / best[1] * 100.0
+
+
+def append_history(now_ts, league_label, quote_name, rows):
+    new_file = not os.path.exists(HISTORY_FILE)
+    iso = datetime.fromtimestamp(now_ts, timezone.utc).isoformat(timespec="seconds")
+    with open(HISTORY_FILE, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if new_file:
+            w.writerow(["unix_ts", "iso_utc", "league", "currency", "value", "quote"])
+        for name, v in rows:
+            w.writerow([now_ts, iso, league_label, name, f"{v:.6g}", quote_name])
+
+
 def trend(change):
-    """7-day change from the API sparkline -> arrow + percent."""
-    if change is None or change == 0:
+    """24h change from our own history -> arrow + percent. None -> hidden."""
+    if change is None:
         return ""
-    arrow = "🔺" if change > 0 else "🔻"
+    arrow = "🔺" if change >= 0 else "🔻"
     return f"  {arrow} {change:+.1f}%"
 
 
@@ -183,8 +237,9 @@ def build_payload(league, primary_name, rows, missing):
 
     lines = [f"**{name}** : `{fmt(v)}` {primary_name}{trend(chg)}" for name, v, chg in rows]
     if missing:
-        lines.append(f"-# 查無資料:{', '.join(missing)}")
-    lines.append(f"-# 資料來源:[poe.ninja]({source_url}) • 更新於 <t:{int(time.time())}:R>")
+        lines.append(f"-# 查無資料: {', '.join(missing)}")
+    note = "漲跌為 24 小時變化 · " if any(chg is not None for _, _, chg in rows) else ""
+    lines.append(f"-# {note}資料來源: [poe.ninja]({source_url}) • 更新於 <t:{int(time.time())}:R>")
 
     return {
         "content": "",
@@ -231,7 +286,16 @@ def main():
     mode = "bot" if BOT_TOKEN else "webhook"
 
     league, primary_name, rows, missing = fetch_prices()
-    payload = build_payload(league, primary_name, rows, missing)
+
+    # 24h trend from our own accumulated history; then record this run.
+    now_ts = int(time.time())
+    league_label = league.get("name") or league.get("id")
+    history = load_history()
+    rows3 = [(name, v, change_24h(history, now_ts, league_label, primary_name, name, v))
+             for name, v in rows]
+    append_history(now_ts, league_label, primary_name, rows)
+
+    payload = build_payload(league, primary_name, rows3, missing)
 
     message_id = ""
     if os.path.exists(STATE_FILE):
