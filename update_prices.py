@@ -235,7 +235,7 @@ def build_payload(league, primary_name, rows, missing):
     # poe.ninja page slug: lowercase league name with non-alphanumerics removed
     source_url = f"https://poe.ninja/poe2/economy/{re.sub(r'[^a-z0-9]', '', str(league_label).lower())}/currency"
 
-    lines = [f"**{name}** : `{fmt(v)}` {primary_name}{trend(chg)}" for name, v, chg in rows]
+    lines = [f"## {name}:{fmt(v)} {primary_name}{trend(chg)}" for name, v, chg in rows]
     if missing:
         lines.append(f"-# 查無資料: {', '.join(missing)}")
     note = "漲跌為 24 小時變化 · " if any(chg is not None for _, _, chg in rows) else ""
