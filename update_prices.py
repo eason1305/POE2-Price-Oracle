@@ -240,8 +240,12 @@ def build_payload(league, primary_name, rows, missing):
     lines = [f"{name}: **{fmt(v)}** {primary_name}{trend(chg)}" for name, v, chg in rows]
     if missing:
         lines.append(f"-# 查無資料: {', '.join(missing)}")
-    note = "漲跌為 24 小時變化 · " if any(chg is not None for _, _, chg in rows) else ""
-    lines.append(f"-# {note}資料來源: [poe.ninja]({source_url}) • 更新於 <t:{int(time.time())}:R>")
+    lines.append("")
+    lines.append(f"-# [poe.ninja]({source_url}) · <t:{int(time.time())}:R>")
+
+    footer = "自動更新"
+    if any(chg is not None for _, _, chg in rows):
+        footer += " · 漲跌為 24h"
 
     return {
         "content": "",
@@ -249,7 +253,7 @@ def build_payload(league, primary_name, rows, missing):
             "title": f"PoE2 通貨價格 — {league_label}",
             "description": "\n".join(lines),
             "color": 0xC9A227,
-            "footer": {"text": "自動更新"},
+            "footer": {"text": footer},
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }],
         "allowed_mentions": {"parse": []},
