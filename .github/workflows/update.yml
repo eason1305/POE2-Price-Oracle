@@ -33,6 +33,7 @@ jobs:
           CURRENCIES: "Divine Orb,Chaos Orb"
           LEAGUE_MATCH: ""   # 空字串 = 永遠跟隨當前挑戰聯盟;想釘選特定聯盟才填(如 "aldur")
           QUOTE_CURRENCY: "Exalted Orb"
+          UNIT_LABEL: "ex"   # 價格單位的顯示縮寫;留空 "" 顯示完整名稱
           # ──────────────────────────────────────────────
         run: python update_prices.py
 

@@ -46,6 +46,8 @@ LEAGUE_MATCH = os.environ.get("LEAGUE_MATCH", "aldur").strip().lower()
 # Currency to quote prices in (name or id). Prices are converted from the
 # API's primary reference currency using core.rates.
 QUOTE_CURRENCY = os.environ.get("QUOTE_CURRENCY", "Exalted Orb").strip()
+# Display label for the quote unit (e.g. "ex"). Empty = full currency name.
+UNIT_LABEL = os.environ.get("UNIT_LABEL", "").strip()
 
 HEADERS = {
     # poe.ninja asks for a descriptive User-Agent with a contact.
@@ -235,7 +237,7 @@ def build_payload(league, primary_name, rows, missing):
     # poe.ninja page slug: lowercase league name with non-alphanumerics removed
     source_url = f"https://poe.ninja/poe2/economy/{re.sub(r'[^a-z0-9]', '', str(league_label).lower())}/currency"
 
-    lines = [f"## {name}:{fmt(v)} {primary_name}{trend(chg)}" for name, v, chg in rows]
+    lines = [f"{name}: **{fmt(v)}** {primary_name}{trend(chg)}" for name, v, chg in rows]
     if missing:
         lines.append(f"-# 查無資料: {', '.join(missing)}")
     note = "漲跌為 24 小時變化 · " if any(chg is not None for _, _, chg in rows) else ""
@@ -295,7 +297,7 @@ def main():
              for name, v in rows]
     append_history(now_ts, league_label, primary_name, rows)
 
-    payload = build_payload(league, primary_name, rows3, missing)
+    payload = build_payload(league, UNIT_LABEL or primary_name, rows3, missing)
 
     message_id = ""
     if os.path.exists(STATE_FILE):
